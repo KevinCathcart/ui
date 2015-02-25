@@ -179,30 +179,16 @@ var MiniProfiler = (function () {
                 }
                 break;
         }
-
-        processTiming(json, json.Root, 0);
+        var duplicates={};
+        processTiming(json, json.Root, 0, duplicates);
     };
 
-    var processTiming = function (json, timing, depth) {
+    var processTiming = function (json, timing, depth, duplicates) {
         timing.DurationWithoutChildrenMilliseconds = timing.DurationMilliseconds;
         timing.Depth = depth;
         timing.HasCustomTimings = timing.CustomTimings ? true : false;
         timing.HasDuplicateCustomTimings = {};
         json.HasCustomTimings = json.HasCustomTimings || timing.HasCustomTimings;
-
-        if (timing.Children) {
-            for (var i = 0; i < timing.Children.length; i++) {
-                timing.Children[i].ParentTimingId = timing.Id;
-                processTiming(json, timing.Children[i], depth + 1);
-                timing.DurationWithoutChildrenMilliseconds -= timing.Children[i].DurationMilliseconds;
-            }
-        } else {
-            timing.Children = [];
-        }
-
-        // do this after subtracting child durations
-        timing.IsTrivial = timing.DurationWithoutChildrenMilliseconds < options.trivialMilliseconds;
-        json.HasTrivialTimings = json.HasTrivialTimings || timing.IsTrivial;
 
         if (timing.CustomTimings) {
             timing.CustomTimingStats = {};
@@ -212,18 +198,18 @@ var MiniProfiler = (function () {
                     Duration: 0,
                     Count: 0
                 };
-                var duplicates = {};
+                if (!duplicates[customType]) duplicates[customType]={}; 
                 for (var i = 0; i < customTimings.length; i++) {
                     var customTiming = customTimings[i];
                     customTiming.ParentTimingId = timing.Id;
                     customStat.Duration += customTiming.DurationMilliseconds;
                     customStat.Count++;
-                    if (customTiming.CommandString && duplicates[customTiming.CommandString]) {
+                    if (customTiming.CommandString && duplicates[customType][customTiming.CommandString]) {
                         customTiming.IsDuplicate = true;
                         timing.HasDuplicateCustomTimings[customType] = true;
                         json.HasDuplicateCustomTimings = true;
                     } else {
-                        duplicates[customTiming.CommandString] = true;
+                        duplicates[customType][customTiming.CommandString] = true;
                     }
                 }
                 timing.CustomTimingStats[customType] = customStat;
@@ -239,6 +225,20 @@ var MiniProfiler = (function () {
         } else {
             timing.CustomTimings = {};
         }
+        
+        if (timing.Children) {
+            for (var i = 0; i < timing.Children.length; i++) {
+                timing.Children[i].ParentTimingId = timing.Id;
+                processTiming(json, timing.Children[i], depth + 1, duplicates);
+                timing.DurationWithoutChildrenMilliseconds -= timing.Children[i].DurationMilliseconds;
+            }
+        } else {
+            timing.Children = [];
+        }
+
+        // do this after subtracting child durations
+        timing.IsTrivial = timing.DurationWithoutChildrenMilliseconds < options.trivialMilliseconds;
+        json.HasTrivialTimings = json.HasTrivialTimings || timing.IsTrivial;
     };
 
     var renderTemplate = function (json) {
